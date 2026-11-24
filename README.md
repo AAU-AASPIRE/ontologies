@@ -1,3 +1,5 @@
+<img src=".github/icon.png" alt="" width="96" align="right">
+
 # ontologies
 
 ARSO, APSO, AProSO and PPRL: the resource, product, process and link ontologies behind the AASPIRE AASs, with the capability and skill vocabulary and SHACL shapes.
