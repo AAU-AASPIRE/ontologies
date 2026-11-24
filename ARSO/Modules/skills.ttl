@@ -1,0 +1,604 @@
+@prefix arso: <https://w3id.org/2025/arso#> .
+@prefix aas:  <https://admin-shell.io/aas/3/1/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+#################################################################
+# SMT STRUCTURE OVERVIEW
+#################################################################
+# Design note: the Skills submodel is ARSO's own template. It began as a flattened
+# IDTA 02015 Control Component Type and is no longer that template. Endpoint binding
+# lives in the AID module, and a skill's commands refer to the AID actions that call them.
+#
+# v0.7: a skill is its commands (Start, Stop, Abort, Reset). A command holds the
+# action that calls it, its Operation (parameters, results and the answer are the
+# Operation's variables) and, where it runs other skills, its steps. The same
+# shape describes a primitive, a composite of primitives, and a composite of
+# composites, in this AAS or in the AAS of a component.
+#
+# v0.8: three changes.
+# - Every skill element has the same semanticId, https://smartproductionlab.aau.dk/skill.
+#   What kind it is, is a supplemental semanticId: .../skill/Primitive,
+#   .../skill/Composite or .../skill/ModuleControl.
+# - The resource's own commands (Occupy, Release, Reset, Start, Stop, Abort, Clear)
+#   are skills of the kind ModuleControl, in the Skills submodel like the others.
+#   Each is called by its Start; what the resource runs while it resets or stops
+#   are the steps of that Start. There is no Module submodel any more.
+# - What a command runs is a flow, in the elements of the process planner's
+#   Production Sequence (same idShorts and semanticIds, https://smartproductionlab.aau.dk/ProductionSequence/<Name>/1/0), so a
+#   skill and a product's plan are read and edited the same way: a step has a
+#   NodeId, a Kind, a Name and an Order; Kind "step" runs a skill, "parallel" has
+#   Branches that all have to end, "decision" a Condition and two Branches,
+#   "conditional" a Condition and Steps. A resource's control has to be able to
+#   carry out the kinds its AAS uses; what it cannot, its tools refuse.
+#
+# v0.9 (26 Oct): the skills are the submodel's own elements (no Skills container), the
+# Interfaces container is gone (a command refers to the AID action that calls it), and an
+# error is a property whose value is its code (no SMC around one ErrorCode).
+#
+# v0.10 (27 Oct): what clients need of what was built. RuleSet: the rule set the resource's
+# program is built by, which says that it can be read back and given a described skill online.
+# Deployment, per skill: Built (the program carries it out) or Described (in the AAS only; it
+# is offered after a reconfiguration). The rest of the record (instances, hashes, change log)
+# is the integrator's, outside the AAS (Control Configuration module).
+#
+# v0.11 (27 Oct): a primitive's Contract is split into Conditions (Precondition, Postcondition,
+# Invariant: the words of IDTA 02020 and CSS) and Completion (After, Timeout). They are the
+# run-time form of what the capability the primitive realizes states for planning (Capability
+# Description, property constraints).
+#
+# Skills (Submodel)
+#   ├─ RuleSet [Property, xs:string, 0..1] — the URI of the rule set the program is built by
+#   │    (v0.10), e.g. https://smartproductionlab.aau.dk/rules/module/2
+#   ├─ {skill_name} [SMC Skill, 0..*] — semanticId .../skill; its kind and its
+#   │         │    type (what it does) supplemental semanticIds (26 Oct)
+#   │         ├─ Deployment [Property, xs:string, 0..1] — Built | Described (v0.10);
+#   │         │    absent: built (a primitive is a block type, always built)
+#   │         ├─ SemanticId [Property, xs:string, 0..1] — the type, only in the short form
+#   │         │    older AASs carry; a skill's type is a supplemental semanticId
+#   │         ├─ Start, Stop, Abort, Reset [SMC Command, 0..1 each] — semanticId
+#   │         │    │    https://smartproductionlab.aau.dk/skill/Start, ...
+#   │         │    ├─ InterfaceReference [ReferenceElement, 0..1] — the AID action
+#   │         │    │    that calls the command; none: not callable from outside
+#   │         │    ├─ {command} [Operation, 1] — named like the command. Its
+#   │         │    │    variables: the session and the parameters in; whether it
+#   │         │    │    was accepted, the error and the results out
+#   │         │    └─ Steps [SMC, 0..1] — what the command runs
+#   │         │         └─ Step_0000, ... [SMC Step, 0..*]
+#   │         │              ├─ NodeId, Kind, Name, Order [Property, 1 each]
+#   │         │              ├─ Skill [ReferenceElement, 0..1] — Kind step: the
+#   │         │              │    skill it runs (running it is its Start), of this
+#   │         │              │    AAS or of the AAS of a part
+#   │         │              ├─ Bindings [SMC, 0..1] — Binding_0000, ...: Name (an
+#   │         │              │    input of that skill), and Value (a constant) or
+#   │         │              │    SourceElement (the variable of this command's
+#   │         │              │    Operation it is handed); InputReference: the
+#   │         │              │    input itself
+#   │         │              ├─ Outputs [SMC, 0..1] — Output_0000, ...: OutputId (a
+#   │         │              │    result of this command), Name, DataType, Unit and
+#   │         │              │    ResultReference (the result of the step's skill
+#   │         │              │    it is)
+#   │         │              ├─ Branches [SMC, 0..1] — Kind parallel, decision:
+#   │         │              │    Branch_0000, ...: BranchId, Name, Order, Steps
+#   │         │              ├─ Condition [SMC, 0..1] — Kind decision, conditional
+#   │         │              └─ Steps [SMC, 0..1] — Kind conditional: its body
+#   │         ├─ Conditions [SMC, 0..1] — of a primitive (v0.11): Precondition,
+#   │         │    Postcondition, Invariant (css:Constraint), over the resource's signals
+#   │         ├─ Completion [SMC, 0..1] — of a primitive (v0.11): After (an open-loop
+#   │         │    duration, when no Postcondition ends it), Timeout
+#   │         │  --- the short form: a skill described without its commands ---
+#   │         ├─ {skill_name} [Operation, 0..1] — the Operation that starts it
+#   │         ├─ InterfaceReference [ReferenceElement, 0..1] — the AID action
+#   │         │    that starts it (arso:SkillInterfaceRefActionShape /
+#   │         │    arso:SkillInterfaceRefTargetShape in arso-rules.shacl.ttl)
+#   │         └─ StateMachine [Property, xs:string, 0..1] — asynchronous skills
+#   └─ Errors [SMC, 1] — always present; {error} [Property, xs:integer, 0..*]: its
+#        value the code. What the ErrorID of an Operation's answer can be
+#
+# What is not here, and where it is instead: a skill's state, error and results
+# are data points (Operational Data), fed from the interface by the mapping
+# configuration; a data point and the Operation variable it shows share their
+# semanticId. Which block of the program a skill or a step is, is the integrator's
+# record (Control Configuration module), outside the AAS. What a primitive occupies is the component whose
+# AAS it is described in. Which capability a skill realizes is said by the
+# capability (CapabilityRealizedBy), never by the skill.
+
+#################################################################
+# ONTOLOGY METADATA
+#################################################################
+
+<https://w3id.org/2025/arso/modules/skills>
+  rdf:type owl:Ontology ;
+  owl:imports <https://admin-shell.io/aas/3/1/> ;
+  rdfs:comment """ARSO module: the Skills submodel -- a resource's skills as their commands, the steps they run and the errors they report. It began as an adaptation of IDTA 02015-2-0 Control Component Type (February 2025) and is its own template now; see the design note above.
+
+  Submodel semanticId: https://smartproductionlab.aau.dk/ARSO/Skills/1/0/Submodel (IDTA 02015's https://admin-shell.io/idta/ControlComponentType/1/0 is still recognised, for older AASs)
+  Cross-submodel: InterfaceReference targets are validated in SPARQL SHACL (arso-rules.shacl.ttl).""" .
+
+
+#################################################################
+# SUBMODEL TYPES
+#################################################################
+
+arso:SkillsSubmodel rdf:type owl:Class ;
+  rdfs:subClassOf aas:Submodel ;
+  rdfs:label "Skills Submodel" ;
+  arso:semanticId "https://admin-shell.io/idta/ControlComponentType/1/0" ,
+                  "https://smartproductionlab.aau.dk/ARSO/Skills/1/0/Submodel" ;
+  rdfs:comment "The Skills submodel (ARSO): a resource's skills with their commands and steps, and the errors they report." .
+
+
+#################################################################
+# ELEMENT TYPES — Skill (submodel level)
+#################################################################
+
+arso:SkillSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillsSubmodel ;
+  arso:semanticId "https://smartproductionlab.aau.dk/skill" ;
+  rdfs:comment "SMC {skill_name} — a named skill, an element of the Skills submodel itself, recognised by its semanticId (no idShort — the skill name is user-defined). Contains its commands (Start, Stop, Abort, Reset) or, in the short form, an Operation and an InterfaceReference. Its supplemental semanticIds say what kind of skill it is (https://smartproductionlab.aau.dk/skill/Primitive: its commands run nothing; .../skill/Composite: a command runs other skills; .../skill/ModuleControl) and what it does, its type (a class of the lab's Skills vocabulary, https://smartproductionlab.aau.dk/skills/<Type>)." .
+
+arso:SkillsRuleSetProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillsSubmodel ;
+  arso:idShort "RuleSet" ;
+  rdfs:comment "Property RuleSet (xs:string) — the rule set the resource's program is built by, named by its URI. It says that the program can be read back by the rules and that a described skill can be built online; a tool that does not know the rule set does not change the program." .
+
+arso:SkillDeploymentProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillSMC ;
+  arso:idShort "Deployment" ;
+  rdfs:comment "Property Deployment (xs:string) — Built: the resource's program carries the skill out; Described: the skill is in the AAS only and is offered after a reconfiguration. Written by the tools that build a skill (Built) and by an editor that describes one (Described). Absent: built." .
+
+arso:SkillSemanticIdProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillSMC ;
+  arso:idShort "SemanticId" ;
+  rdfs:comment "Property SemanticId (xs:string) — what the skill does, as the short form of older AASs states it. Since 26 Oct a skill states its type as a supplemental semanticId, as every other meaning is stated; this property is only read where that is missing." .
+
+
+#################################################################
+# ELEMENT TYPES — Commands (v0.7)
+#
+# What a skill can be told: Start, Stop, Abort, Reset. A command carries a
+# generic semanticId (https://smartproductionlab.aau.dk/skill/Start, ...; see
+# ontology/Vocabulary/commands.ttl), so a command means the same on every skill.
+# Commands take different parameters (Start has the skill's, Stop none), and a
+# composite skill may run the same skills on Start and on Stop, wired
+# differently: each command holds its own Operation and its own steps.
+#################################################################
+
+arso:SkillCommandSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillSMC ;
+  arso:idShort "Start" , "Stop" , "Abort" , "Reset" ;
+  rdfs:comment "SMC Start, Stop, Abort or Reset — one command of a skill: the action that calls it, its Operation, and what it runs." .
+
+arso:SkillInterfaceReferenceRef rdf:type owl:Class ;
+  rdfs:subClassOf aas:ReferenceElement ;
+  arso:parentClass arso:SkillCommandSMC , arso:SkillSMC ;
+  arso:idShort "InterfaceReference" ;
+  rdfs:comment "ReferenceElement InterfaceReference — the AID action (arso:InterfaceSMC/InteractionMetadata/actions/{action}) that calls the command; in the short form, the action that starts the skill. A command without it is not callable from outside. The action may be in the interface description of the resource the component is built into. Cross-submodel target validated via SPARQL SHACL (arso:SkillInterfaceRefActionShape / arso:SkillInterfaceRefTargetShape in arso-rules.shacl.ttl)." .
+
+arso:SkillOperationElement rdf:type owl:Class ;
+  rdfs:subClassOf aas:Operation ;
+  arso:parentClass arso:SkillCommandSMC , arso:SkillSMC ;
+  rdfs:comment "Operation — the invocable Operation of a command (named like it), or in the short form of a skill (named like the skill). Applied unconditionally to every direct child with AAS modelType Operation. Its variables are the parameters (in), the results and the answer (out); a variable carries its unit and limits." .
+
+arso:CommandStepsSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillCommandSMC , arso:FlowBranchSMC , arso:SkillStepSMC ;
+  arso:idShort "Steps" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Steps/1/0" ;
+  rdfs:comment "SMC Steps — what a command runs (or a branch, or the body of a conditional step): steps in the order of their Order." .
+
+arso:SkillStepSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:CommandStepsSMC ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Step/1/0" ;
+  rdfs:comment "SMC Step_0000, ... — one node of the flow. Kind step: one use of a skill (Skill, Bindings, Outputs). Kind parallel: Branches that all have to end. Kind decision: a Condition and two Branches (Order 0 yes, 1 no). Kind conditional: a Condition and the Steps it guards." .
+
+arso:StepNodeIdProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillStepSMC ;
+  arso:idShort "NodeId" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/NodeId/1/0" ;
+  rdfs:comment "Property NodeId (xs:string) — the node's identifier, unique in its command. Of a step it is the name of the step's instance in the control program." .
+
+arso:StepKindProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillStepSMC ;
+  arso:idShort "Kind" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Kind/1/0" ;
+  rdfs:comment "Property Kind (xs:string) — step, parallel, decision or conditional." .
+
+arso:FlowNameProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillStepSMC , arso:FlowBranchSMC , arso:StepBindingSMC , arso:StepOutputSMC ;
+  arso:idShort "Name" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Name/1/0" ;
+  rdfs:comment "Property Name (xs:string) — what a step, a branch or an output is called for a person; of a Binding, the input of the step's skill it is about." .
+
+arso:FlowOrderProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillStepSMC , arso:FlowBranchSMC , arso:StepConditionSMC ;
+  arso:idShort "Order" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Order/1/0" ;
+  rdfs:comment "Property Order (xs:nonNegativeInteger) — the position among its siblings, from 0; it decides the order, not the place in the collection." .
+
+arso:StepSkillRef rdf:type owl:Class ;
+  rdfs:subClassOf aas:ReferenceElement ;
+  arso:parentClass arso:SkillStepSMC ;
+  arso:idShort "Skill" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Skill/1/0" ;
+  rdfs:comment "ReferenceElement Skill — the skill a step runs, the whole of it: running it is its Start, and its other commands are what ends it early. A skill of the same AAS or of an AAS that is a part of it in HierarchicalStructures (downward only)." .
+
+arso:StepBindingsSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillStepSMC ;
+  arso:idShort "Bindings" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Bindings/1/0" ;
+  rdfs:comment "SMC Bindings — what the inputs of the step's skill are handed." .
+
+arso:StepBindingSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:StepBindingsSMC ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Binding/1/0" ;
+  rdfs:comment "SMC Binding_0000, ... — one input of the step's skill (Name): a constant (Value) or a variable of the command's Operation (SourceElement)." .
+
+arso:BindingValueProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:StepBindingSMC , arso:ConditionExpectedSMC ;
+  arso:idShort "Value" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Value/1/0" ;
+  rdfs:comment "Property Value — a constant: what a Binding hands to the input (the value as it runs), or what a Condition compares with." .
+
+arso:BindingSourceElementRef rdf:type owl:Class ;
+  rdfs:subClassOf aas:ReferenceElement ;
+  arso:parentClass arso:StepBindingSMC , arso:ConditionOperandSMC ;
+  arso:idShort "SourceElement" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/SourceElement/1/0" ;
+  rdfs:comment "ReferenceElement SourceElement — the variable of the command's Operation that is handed down to the input, or that a Condition looks at." .
+
+arso:BindingInputReferenceRef rdf:type owl:Class ;
+  rdfs:subClassOf aas:ReferenceElement ;
+  arso:parentClass arso:StepBindingSMC ;
+  arso:idShort "InputReference" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/InputReference/1/0" ;
+  rdfs:comment "ReferenceElement InputReference — the input itself: the variable of the Start Operation of the step's skill." .
+
+arso:StepOutputsSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillStepSMC ;
+  arso:idShort "Outputs" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Outputs/1/0" ;
+  rdfs:comment "SMC Outputs — the results of the command that this step gives." .
+
+arso:StepOutputSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:StepOutputsSMC ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Output/1/0" ;
+  rdfs:comment "SMC Output_0000, ... — one result: OutputId names the output variable of the command's Operation, ResultReference the result of the step's skill it is." .
+
+arso:OutputIdProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:StepOutputSMC , arso:ConditionOperandSMC ;
+  arso:idShort "OutputId" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/OutputId/1/0" ;
+  rdfs:comment "Property OutputId (xs:string) — the output's identifier: the idShort of the output variable of the command's Operation." .
+
+arso:FlowDataTypeProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:StepOutputSMC , arso:ConditionExpectedSMC ;
+  arso:idShort "DataType" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/DataType/1/0" ;
+  rdfs:comment "Property DataType (xs:string) — boolean, number or string." .
+
+arso:FlowUnitProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:StepOutputSMC , arso:StepConditionSMC ;
+  arso:idShort "Unit" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Unit/1/0" ;
+  rdfs:comment "Property Unit (xs:string) — the unit of an output or of what a Condition compares; empty for none." .
+
+arso:OutputResultReferenceRef rdf:type owl:Class ;
+  rdfs:subClassOf aas:ReferenceElement ;
+  arso:parentClass arso:StepOutputSMC ;
+  arso:idShort "ResultReference" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/ResultReference/1/0" ;
+  rdfs:comment "ReferenceElement ResultReference — the result: an output variable of the Start Operation of the step's skill." .
+
+arso:StepBranchesSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillStepSMC ;
+  arso:idShort "Branches" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Branches/1/0" ;
+  rdfs:comment "SMC Branches — the branches of a parallel step (two or more, all have to end) or of a decision (exactly two)." .
+
+arso:FlowBranchSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:StepBranchesSMC ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Branch/1/0" ;
+  rdfs:comment "SMC Branch_0000, ... — one branch: BranchId, Name, Order and its Steps." .
+
+arso:BranchIdProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:FlowBranchSMC ;
+  arso:idShort "BranchId" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/BranchId/1/0" ;
+  rdfs:comment "Property BranchId (xs:string) — the branch's identifier, unique in its command." .
+
+arso:StepConditionSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillStepSMC , arso:ConditionGroupSMC ;
+  arso:idShort "Condition" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Condition/1/0" ;
+  rdfs:comment "SMC Condition — what a decision or a conditional step looks at: every N-th run (ConditionType everyNthProduct: EveryNProducts, CounterScope), a comparison (ConditionType comparison: Operand, Operator, Expected, Unit), or a group (ConditionType all or any: Conditions). In a group it is Condition_0000, ... with its Order." .
+
+arso:ConditionGroupSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:StepConditionSMC ;
+  arso:idShort "Conditions" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Conditions/1/0" ;
+  rdfs:comment "SMC Conditions — the conditions of a group: all of them hold (ConditionType all) or one does (any)." .
+
+arso:ConditionTypeProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:StepConditionSMC ;
+  arso:idShort "ConditionType" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/ConditionType/1/0" ;
+  rdfs:comment "Property ConditionType (xs:string) — everyNthProduct, comparison, all or any." .
+
+arso:ConditionOperatorProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:StepConditionSMC ;
+  arso:idShort "Operator" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Operator/1/0" ;
+  rdfs:comment "Property Operator (xs:string) — eq, ne, gt, gte, lt or lte." .
+
+arso:ConditionEveryNProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:StepConditionSMC ;
+  arso:idShort "EveryNProducts" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/EveryNProducts/1/0" ;
+  rdfs:comment "Property EveryNProducts (xs:positiveInteger) — the condition holds on every N-th run." .
+
+arso:ConditionCounterScopeProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:StepConditionSMC ;
+  arso:idShort "CounterScope" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/CounterScope/1/0" ;
+  rdfs:comment "Property CounterScope (xs:string) — what the runs are counted over." .
+
+arso:ConditionExpectedSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:StepConditionSMC ;
+  arso:idShort "Expected" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Expected/1/0" ;
+  rdfs:comment "SMC Expected — what the operand is compared with: DataType and Value." .
+
+arso:ConditionOperandSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:StepConditionSMC ;
+  arso:idShort "Operand" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/Operand/1/0" ;
+  rdfs:comment "SMC Operand — what is compared: a variable of the command's Operation (OperandType parameter: SourceElement) or the output of an earlier step (OperandType output: StepId, OutputId)." .
+
+arso:OperandTypeProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:ConditionOperandSMC ;
+  arso:idShort "OperandType" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/OperandType/1/0" ;
+  rdfs:comment "Property OperandType (xs:string) — parameter or output." .
+
+arso:OperandStepIdProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:ConditionOperandSMC ;
+  arso:idShort "StepId" ;
+  arso:semanticId "https://smartproductionlab.aau.dk/ProductionSequence/StepId/1/0" ;
+  rdfs:comment "Property StepId (xs:string) — the NodeId of the step whose output is compared." .
+
+
+#################################################################
+# ELEMENT TYPES — Conditions and Completion of a primitive (v0.11; Contract until v0.10)
+#################################################################
+
+arso:SkillConditionsSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillSMC ;
+  arso:idShort "Conditions" ;
+  rdfs:comment "SMC Conditions — of a primitive skill: Precondition, Postcondition, Invariant (css:Constraint), expressions over the resource's signals and the skill's parameters, checked as it runs. The capability the primitive realizes states the same over its properties, for planning (Capability Description, property constraints); both name the same data points. Was part of Contract until v0.10." .
+
+arso:ConditionsPreconditionProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillConditionsSMC ;
+  arso:idShort "Precondition" ;
+  rdfs:comment "Property Precondition (xs:string) — what has to hold when the skill starts. An expression over the resource's signals and the skill's parameters (was Requires)." .
+
+arso:ConditionsPostconditionProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillConditionsSMC ;
+  arso:idShort "Postcondition" ;
+  rdfs:comment "Property Postcondition (xs:string) — the skill has succeeded when it holds (a sensor ends it). An expression over the resource's signals and the skill's parameters (was Ensures)." .
+
+arso:ConditionsInvariantProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillConditionsSMC ;
+  arso:idShort "Invariant" ;
+  rdfs:comment "Property Invariant (xs:string) — what has to hold all the while the skill runs. An expression over the resource's signals and the skill's parameters." .
+
+arso:SkillCompletionSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillSMC ;
+  arso:idShort "Completion" ;
+  rdfs:comment "SMC Completion — of a primitive skill: how it ends when no Postcondition ends it (After), and the longest it may run (Timeout). Was part of Contract until v0.10." .
+
+arso:CompletionAfterProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillCompletionSMC ;
+  arso:idShort "After" ;
+  rdfs:comment "Property After (xs:string) — the open-loop duration: the skill has succeeded when it has passed, in seconds (a time ends it). A number or an expression over the skill's parameters." .
+
+arso:CompletionTimeoutProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillCompletionSMC ;
+  arso:idShort "Timeout" ;
+  rdfs:comment "Property Timeout (xs:string) — the longest the skill may run, a duration." .
+
+
+#################################################################
+# ELEMENT TYPES — the short form of a Skill
+#
+# A skill described without its commands: the Operation that starts it and the
+# action it invokes (SkillOperationElement and SkillInterfaceReferenceRef above,
+# directly in the skill). It is what the generation pipeline writes for the
+# MQTT stations, and stays valid.
+#################################################################
+
+arso:SkillStateMachineProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillSMC ;
+  arso:idShort "StateMachine" ;
+  rdfs:comment "Property StateMachine (xs:string) — present only on asynchronous skills of the short form. Polled by clients for intermediate state (IDLE, RUNNING, SUCCESS, FAILURE) during execution." .
+
+
+#################################################################
+# ELEMENT TYPES — Errors (submodel level)
+#################################################################
+
+arso:SkillErrorsSMC rdf:type owl:Class ;
+  rdfs:subClassOf aas:SubmodelElementCollection ;
+  arso:parentClass arso:SkillsSubmodel ;
+  arso:idShort "Errors" ;
+  rdfs:comment "SMC Errors — what the ErrorID in the answer of an Operation can be: one property per error. Always present, may be empty." .
+
+arso:SkillErrorProperty rdf:type owl:Class ;
+  rdfs:subClassOf aas:Property ;
+  arso:parentClass arso:SkillErrorsSMC ;
+  rdfs:comment "Property {error_name} (xs:integer) — a named error; its value is the code an ErrorID carries." .
+
+
+#################################################################
+# CONTAINMENT CONSTRAINTS
+#################################################################
+
+# An error's value is its code
+arso:SkillErrorProperty rdfs:subClassOf [
+  rdf:type owl:Restriction ;
+  owl:onProperty <https://admin-shell.io/aas/3/1/Property/valueType> ;
+  owl:hasValue <https://admin-shell.io/aas/3/1/DataTypeDefXsd/Integer> ] .
+
+# SkillsSubmodel holds its skills and exactly one Errors container
+arso:SkillsSubmodel rdfs:subClassOf [
+  rdf:type owl:Restriction ;
+  owl:onProperty <https://admin-shell.io/aas/3/1/Submodel/submodelElements> ;
+  owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ;
+  owl:onClass arso:SkillErrorsSMC ] .
+
+# At most one rule set; a skill's Deployment is Built or Described, once
+arso:SkillsSubmodel rdfs:subClassOf [
+  rdf:type owl:Restriction ;
+  owl:onProperty <https://admin-shell.io/aas/3/1/Submodel/submodelElements> ;
+  owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ;
+  owl:onClass arso:SkillsRuleSetProperty ] .
+
+arso:SkillDeploymentProperty rdfs:subClassOf [
+  rdf:type owl:Restriction ;
+  owl:onProperty <https://admin-shell.io/aas/3/1/Property/value> ;
+  owl:allValuesFrom [ rdf:type rdfs:Datatype ; owl:oneOf ( "Built" "Described" ) ] ] .
+
+# A Skill says what it does in its supplemental semanticIds; the SemanticId property of the short
+# form is optional. How it is called is in its commands or, in the short form, in the skill itself:
+# that it has one of the two is a rule (arso-rules.shacl.ttl), not a restriction.
+arso:SkillSMC rdfs:subClassOf [
+  rdf:type owl:Restriction ;
+  owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+  owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:SkillSemanticIdProperty ] .
+
+arso:SkillSMC rdfs:subClassOf [
+  rdf:type owl:Restriction ;
+  owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+  owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:SkillDeploymentProperty ] .
+
+arso:SkillSMC rdfs:subClassOf
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:SkillInterfaceReferenceRef ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:SkillStateMachineProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:SkillConditionsSMC ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:SkillCompletionSMC ] .
+
+# A command has at most one action and one list of steps (that it has an Operation is a rule)
+arso:SkillCommandSMC rdfs:subClassOf
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:SkillInterfaceReferenceRef ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:CommandStepsSMC ] .
+
+# A Step has its identifier, kind, name and order, and at most one of everything else
+arso:SkillStepSMC rdfs:subClassOf
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:StepNodeIdProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:StepKindProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:FlowNameProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:FlowOrderProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:StepSkillRef ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:StepBindingsSMC ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:StepOutputsSMC ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:StepBranchesSMC ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:StepConditionSMC ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:CommandStepsSMC ] .
+
+# A group holds its conditions (each a Condition named Condition_0000, ...)
+arso:ConditionGroupSMC rdfs:subClassOf
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:minQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:StepConditionSMC ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "16"^^xsd:nonNegativeInteger ; owl:onClass arso:StepConditionSMC ] .
+
+# A Binding names its input; a Branch has its identifier, name and order
+arso:StepBindingSMC rdfs:subClassOf
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:FlowNameProperty ] .
+
+arso:StepOutputSMC rdfs:subClassOf
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:OutputIdProperty ] .
+
+arso:FlowBranchSMC rdfs:subClassOf
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:BranchIdProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:FlowNameProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:FlowOrderProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:CommandStepsSMC ] .
+
+# Conditions and Completion state each term at most once
+arso:SkillConditionsSMC rdfs:subClassOf
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:ConditionsPreconditionProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:ConditionsPostconditionProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:ConditionsInvariantProperty ] .
+
+arso:SkillCompletionSMC rdfs:subClassOf
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:CompletionAfterProperty ],
+  [ rdf:type owl:Restriction ; owl:onProperty <https://admin-shell.io/aas/3/1/SubmodelElementCollection/value> ;
+    owl:maxQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass arso:CompletionTimeoutProperty ] .
