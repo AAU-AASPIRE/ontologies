@@ -43,11 +43,21 @@
 # 10-capabilities.rq); the capability its type contributes says the
 # same, and the two have to agree. The types declared so far are
 # unchanged.
+#
+# 0.5 (26 Nov): the module level skills of the AP2030 line's stations
+# and the filling module (aas-model's resources), now that a type may be
+# a composite's: Dispensing, Stoppering, Capping, Capture, Loading,
+# Unloading and Scrap, each with the process capability it offers; and
+# the ModuleControl skills every station has (Occupy, Release, Halt),
+# which contribute no capability (access control and the state machine,
+# commands.ttl). A station's composite runs the primitives of its
+# components; where those are not declared yet, its type says what it
+# offers.
 #################################################################
 
 <https://smartproductionlab.aau.dk/skills>
   rdf:type owl:Ontology ;
-  owl:versionInfo "0.4" ;
+  owl:versionInfo "0.5" ;
   owl:imports <https://smartproductionlab.aau.dk/semantics> ;
   rdfs:comment "The skill types of aseptic filling lines, of the components' primitive skills and the modules' composite skills, and the capability each contributes (AAU Smart Production Lab)." .
 
@@ -146,3 +156,44 @@ skl:PlaceInTray rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
 
 skl:AwaitJob rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
   rdfs:label "AwaitJob" ; rdfs:comment "Wait until a robot has ended the job it runs, as after a stop; contributes no capability (0.3)." .
+
+
+# Module level skills: composites (0.5) ----------------------------------------
+
+skl:Dispensing rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Dispensing" ; rdfs:comment "Fill a container: move the needle in, dispense the volume, move it out, weigh (a composite of a dispensing station or the filling module)." ;
+  lab:contributes lab:Filling .
+
+skl:Stoppering rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Stoppering" ; rdfs:comment "Place a stopper on a filled container and press it in (a composite of a stoppering station or module)." ;
+  lab:contributes lab:Stoppering .
+
+skl:Capping rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Capping" ; rdfs:comment "Put a cap on a stoppered container and fasten it (a composite of a capping station or module)." ;
+  lab:contributes lab:Capping .
+
+skl:Capture rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Capture" ; rdfs:comment "Image a container and decide whether it passes (a composite of an inspection station)." ;
+  lab:contributes lab:Inspection .
+
+skl:Loading rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Loading" ; rdfs:comment "Place a container on the carrier that takes it through the line (a composite of a loading station or module)." ;
+  lab:contributes lab:Loading .
+
+skl:Unloading rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Unloading" ; rdfs:comment "Take a container off its carrier (a composite of an unloading station or module)." ;
+  lab:contributes lab:Unloading .
+
+skl:Scrap rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Scrap" ; rdfs:comment "Take a rejected container off its carrier and discard it (an unloading station's composite); contributes no capability a product can require." .
+
+# The resource's own commands: ModuleControl (0.5) ------------------------------
+
+skl:Occupy rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Occupy" ; rdfs:comment "Queue a unit at a resource; answered once the resource serves it (the unit at the head of its process queue). A ModuleControl skill: access control, no capability." .
+
+skl:Release rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Release" ; rdfs:comment "Take a served unit off a resource's queue. A ModuleControl skill: access control, no capability." .
+
+skl:Halt rdf:type owl:Class ; rdfs:subClassOf css:Skill ;
+  rdfs:label "Halt" ; rdfs:comment "Stop what a resource runs at once. A ModuleControl skill: its state machine, no capability." .
