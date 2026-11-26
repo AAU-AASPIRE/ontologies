@@ -8,14 +8,17 @@
 #################################################################
 # The skill types of the lab's filling lines.
 #
-# A skill type is what a primitive skill does, the same on every
-# component of a kind: every linear axis has MoveAxis and Home. It is
-# named by an IRI below https://smartproductionlab.aau.dk/skills/; in a
-# component's AAS the skill element carries it in its SemanticId
-# property. Each type says which capability it contributes
-# (lab:contributes): a composite skill offers the process capabilities
-# its steps contribute, so a module's offered capabilities follow from
-# its skills. What a parameter of a skill means is said on the
+# A skill type is what a skill does, the same on every resource of a
+# kind: every linear axis has MoveAxis and Home. A type may be the type
+# of a primitive (a component's skill) or of a composite (a module's
+# skill, made of steps); which one a skill is, is its kind (commands.ttl:
+# Primitive, Composite, ModuleControl), carried by the skill element, not
+# by its type. It is named by an IRI below
+# https://smartproductionlab.aau.dk/skills/; in a resource's AAS the skill
+# element carries it in its SemanticId property. Each type says which
+# capability it contributes (lab:contributes): a composite skill offers
+# the process capabilities its steps contribute, so a module's offered
+# capabilities follow from its skills. What a parameter of a skill means is said on the
 # parameter itself (its supplemental semantic id, a property of the
 # capability vocabulary).
 #
@@ -29,13 +32,24 @@
 # container up realizes Receiving and putting it down Releasing: the
 # gripper has it in its custody in between (capabilities.ttl 0.7).
 # Home is a component's way to its reference, a robot's home pose too.
+#
+# 0.4 (26 Nov): a skill type is no longer only a primitive's. A composite
+# skill of a module (Dispensing, Stoppering, Loading, ...) carries a type
+# in its SemanticId as a primitive does, and that type may be declared
+# here, with the capability it contributes; until now such IRIs were
+# used in the AASs but declared nowhere. lab:realizes (the capability of
+# its component a primitive realizes) stays a primitive's. What a
+# composite offers is still derived from its steps (PPRL derivation
+# 10-capabilities.rq); the capability its type contributes says the
+# same, and the two have to agree. The types declared so far are
+# unchanged.
 #################################################################
 
 <https://smartproductionlab.aau.dk/skills>
   rdf:type owl:Ontology ;
-  owl:versionInfo "0.3" ;
+  owl:versionInfo "0.4" ;
   owl:imports <https://smartproductionlab.aau.dk/semantics> ;
-  rdfs:comment "The skill types of the components of aseptic filling lines and the capability each contributes (AAU Smart Production Lab)." .
+  rdfs:comment "The skill types of aseptic filling lines, of the components' primitive skills and the modules' composite skills, and the capability each contributes (AAU Smart Production Lab)." .
 
 
 # A linear axis: a stepper motor with a limit switch ---------------------------
