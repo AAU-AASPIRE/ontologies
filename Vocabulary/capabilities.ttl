@@ -86,11 +86,25 @@
 # a Filling that keeps OutletImmersion between MinImmersion and
 # MaxImmersion, bounds the product gives: what makes it narrower is a
 # constraint, so it can be planned (docs/skill-planning.md).
+# 0.11 (26 Nov): the execution model's state (from aas-model's proposal
+# vocabulary/lab-execution.ttl, AP2030; aaspire-internal docs/execution-
+# plan.md D14, D23, D36). A state property says whether it has one value
+# or a set (lab:cardinality) and whether queries compute it from other
+# state rather than storing it (lab:derived); a value may name something
+# (lab:valueType "reference": an AAS, an element of one, a unit's IRI),
+# and HeldBy now does: the holding resource, not its idShort. Location,
+# where a carrier is (derived from AbsoluteX and AbsoluteY, a pose in the
+# line's root frame, within a place kind's lab:placeTolerance);
+# OccupiedBy, the unit a device serves, the head of its process queue
+# (observed, beside Occupancy, which counts); FillResult with
+# InTolerance and OutOfTolerance, the outcome a fill is classified as;
+# Occupying, taking a container into custody as the Occupy skill does,
+# the same class as Receiving.
 #################################################################
 
 <https://smartproductionlab.aau.dk/semantics>
   rdf:type owl:Ontology ;
-  owl:versionInfo "0.10" ;
+  owl:versionInfo "0.11" ;
   owl:imports <http://www.w3id.org/hsu-aut/css> ;
   owl:imports <https://w3id.org/2025/pprl> ;
   owl:imports <http://www.w3id.org/hsu-aut/VDI2860> ;
@@ -101,7 +115,16 @@ lab:unit rdf:type owl:AnnotationProperty ;
   rdfs:comment "The unit the values of a property are given in (as written in the AAS)." .
 
 lab:valueType rdf:type owl:AnnotationProperty ;
-  rdfs:comment "The kind of value a property takes: number, string or boolean." .
+  rdfs:comment "The kind of value a property takes: number, string, boolean or reference (an IRI: an AAS, an element of one, a unit; 0.11)." .
+
+lab:cardinality rdf:type owl:AnnotationProperty ;
+  rdfs:comment "Of a state property: single (one value at a time; effects assign it) or set (a set of values; effects add and remove them) (0.11)." .
+
+lab:derived rdf:type owl:AnnotationProperty ;
+  rdfs:comment "Of a state property: true where queries compute it from other state; it is never stored, and an effect on it is what the next observation should confirm (0.11)." .
+
+lab:placeTolerance rdf:type owl:AnnotationProperty ;
+  rdfs:comment "Of a kind of place: the distance in mm within which a carrier's position is at a place of that kind (0.11)." .
 
 lab:characterizes rdf:type owl:AnnotationProperty ;
   rdfs:comment "A capability this property describes." .
@@ -384,8 +407,8 @@ lab:OutletImmersion rdf:type owl:Class ; rdfs:subClassOf css:Property , pprl:Pro
   lab:characterizes lab:Dosing , lab:BottomUpFilling .
 
 lab:HeldBy rdf:type owl:Class ; rdfs:subClassOf css:Property , pprl:ProductProperty ;
-  rdfs:label "Held by" ; lab:valueType "string" ;
-  rdfs:comment "The resource that has the container in its custody (the idShort of its AAS), empty if none: the container's side of Holding (0.7)." .
+  rdfs:label "Held by" ; lab:valueType "reference" ; lab:cardinality "single" ;
+  rdfs:comment "The resource that has the container in its custody (its AAS, by reference since 0.11; the idShort before), none if none: the container's side of Holding (0.7)." .
 
 lab:Holding rdf:type owl:Class ; rdfs:subClassOf css:Property ;
   rdfs:label "Holding" ; lab:valueType "boolean" ;
@@ -500,3 +523,57 @@ lab:EndEffector rdf:type owl:Class ;
 lab:Mover rdf:type owl:Class ;
   rdfs:label "Mover" ;
   rdfs:comment "A shuttle of the planar table (an xbot): relative to the table's base, its X, Y and Yaw following the controller's measured pose." .
+
+
+#################################################################
+# The execution model's state (0.11)
+#
+# What a planner and a behaviour tree read and write of a resource and
+# a container, and how the state store keeps it: one value or a set
+# (lab:cardinality), observed, written by effects, or derived by query
+# (lab:derived).
+#################################################################
+
+lab:Location rdf:type owl:Class ; rdfs:subClassOf css:Property ;
+  rdfs:label "Location" ; lab:valueType "reference" ; lab:cardinality "single" ; lab:derived true ;
+  rdfs:comment "Where a carrier is: the place whose projected position (AbsoluteX, AbsoluteY) is within the place kind's lab:placeTolerance of the carrier's own; none if no place is. Derived, never stored (0.11)." ;
+  lab:characterizes lab:Transporting .
+
+lab:AbsoluteX rdf:type owl:Class ; rdfs:subClassOf css:Property ;
+  rdfs:label "Absolute X" ; lab:valueType "number" ; lab:unit "mm" ; lab:cardinality "single" ;
+  rdfs:comment "The X of a pose in the line's root frame: a coordinate composed along its RelativeTo chain, or a carrier's reported position (0.11)." .
+
+lab:AbsoluteY rdf:type owl:Class ; rdfs:subClassOf css:Property ;
+  rdfs:label "Absolute Y" ; lab:valueType "number" ; lab:unit "mm" ; lab:cardinality "single" ;
+  rdfs:comment "The Y of a pose in the line's root frame: a coordinate composed along its RelativeTo chain, or a carrier's reported position (0.11)." .
+
+lab:TransferPoint lab:placeTolerance 5.0 .
+
+lab:OccupiedBy rdf:type owl:Class ; rdfs:subClassOf css:Property ;
+  rdfs:label "Occupied by" ; lab:valueType "reference" ; lab:cardinality "single" ;
+  rdfs:comment "The unit a device serves: the head of its process queue, by the unit's IRI (urn:uuid:<uuid>); none when the queue is empty. Observed from the device, where Occupancy counts what effects kept (0.11)." .
+
+lab:FillResult rdf:type owl:Class ; rdfs:subClassOf css:Property , pprl:ProductProperty ;
+  rdfs:label "Fill result" ; lab:valueType "reference" ; lab:cardinality "single" ;
+  rdfs:comment "Whether the container's measured fill is within the product's requirement: lab:InTolerance or lab:OutOfTolerance. Set by classifying a measured result; the number stays in the time series (0.11)." ;
+  lab:characterizes lab:Filling .
+
+lab:InTolerance rdf:type owl:NamedIndividual ; rdfs:label "In tolerance" .
+lab:OutOfTolerance rdf:type owl:NamedIndividual ; rdfs:label "Out of tolerance" .
+
+lab:Occupying rdf:type owl:Class ; rdfs:subClassOf css:Capability ;
+  rdfs:label "Occupying" ; owl:equivalentClass lab:Receiving ;
+  rdfs:comment "Taking a container into custody from the carrier that brings it, as the Occupy skill does: the container is then held by the resource. Named as the skill; the same class as Receiving (0.11)." .
+
+# Cardinality of the state properties the execution model uses that were already here.
+lab:Position lab:cardinality "single" .
+lab:ContentVolume lab:cardinality "single" .
+lab:OutletImmersion lab:cardinality "single" .
+lab:FillWeight lab:cardinality "single" .
+lab:Weighed lab:cardinality "single" .
+lab:Stoppered lab:cardinality "single" .
+lab:Capped lab:cardinality "single" .
+lab:Inspected lab:cardinality "single" .
+lab:InnerDiameter lab:cardinality "single" .
+lab:InnerBottomHeight lab:cardinality "single" .
+lab:RimHeight lab:cardinality "single" .
