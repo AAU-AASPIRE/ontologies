@@ -86,6 +86,9 @@
 # a Filling that keeps OutletImmersion between MinImmersion and
 # MaxImmersion, bounds the product gives: what makes it narrower is a
 # constraint, so it can be planned (docs/skill-planning.md).
+# 0.12 (27 Nov): Referenced, Tared and Weight, which modules plan with, have a
+# cardinality (single), as every state property does since 0.11.
+#
 # 0.11 (26 Nov): the execution model's state (from aas-model's proposal
 # vocabulary/lab-execution.ttl, AP2030; aaspire-internal docs/execution-
 # plan.md D14, D23, D36). A state property says whether it has one value
@@ -104,7 +107,7 @@
 
 <https://smartproductionlab.aau.dk/semantics>
   rdf:type owl:Ontology ;
-  owl:versionInfo "0.11" ;
+  owl:versionInfo "0.12" ;
   owl:imports <http://www.w3id.org/hsu-aut/css> ;
   owl:imports <https://w3id.org/2025/pprl> ;
   owl:imports <http://www.w3id.org/hsu-aut/VDI2860> ;
@@ -574,6 +577,9 @@ lab:Weighed lab:cardinality "single" .
 lab:Stoppered lab:cardinality "single" .
 lab:Capped lab:cardinality "single" .
 lab:Inspected lab:cardinality "single" .
+lab:Referenced lab:cardinality "single" .
+lab:Tared lab:cardinality "single" .
+lab:Weight lab:cardinality "single" .
 lab:InnerDiameter lab:cardinality "single" .
 lab:InnerBottomHeight lab:cardinality "single" .
 lab:RimHeight lab:cardinality "single" .
